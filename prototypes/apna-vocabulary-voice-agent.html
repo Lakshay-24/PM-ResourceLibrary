@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>VocabVoice — Vocabulary Voice Agent</title>
+<style>
+:root{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#172033;background:#f5f7fb}
+*{box-sizing:border-box} body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px}
+.app{width:min(720px,100%);background:#fff;border:1px solid #e4e8f0;border-radius:24px;box-shadow:0 18px 60px rgba(23,32,51,.10);padding:28px}
+.badge{display:inline-flex;padding:6px 10px;border-radius:999px;background:#eef2ff;color:#4451d6;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+h1{font-size:32px;margin:14px 0 6px}.sub{color:#657086;margin:0 0 24px}.word{font-size:42px;font-weight:800;margin:12px 0 4px}.phonetic{color:#7b8498}.definition{font-size:20px;line-height:1.5;margin:18px 0 8px}.example{color:#4c576d;line-height:1.5;margin-bottom:22px}
+.controls{display:flex;flex-wrap:wrap;gap:10px}.controls button{border:0;border-radius:12px;padding:12px 16px;font-weight:700;cursor:pointer}.primary{background:#172033;color:#fff}.secondary{background:#eef2f7;color:#243047}.listen{background:#eafbf1;color:#14663a}.danger{background:#fff0f0;color:#9b2c2c}.status{margin-top:18px;padding:12px 14px;border-radius:12px;background:#f7f9fc;color:#4f5b70;min-height:46px}
+.quiz{margin-top:24px;padding:18px;border-radius:16px;background:#fafbff;border:1px solid #e9ecf5}.quiz input{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px;font-size:16px}.quiz-row{display:flex;gap:10px;margin-top:10px}.quiz-row button{border:0;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer}.score{margin-top:12px;color:#657086}.hint{font-size:13px;color:#7a8497;margin-top:16px;line-height:1.45}
+@media(max-width:560px){.app{padding:20px}.word{font-size:34px}h1{font-size:27px}.controls button{flex:1 1 45%}}
+</style>
+</head>
+<body>
+<main class="app">
+  <span class="badge">Prototype · Voice learning agent</span>
+  <h1>VocabVoice</h1>
+  <p class="sub">A lightweight voice-first vocabulary coach. Tap “Teach me”, or use the microphone and say <b>teach</b>, <b>quiz me</b>, <b>next word</b>, <b>repeat</b>, or <b>spell it</b>.</p>
+  <section aria-live="polite">
+    <div class="word" id="word"></div>
+    <div class="phonetic" id="phonetic"></div>
+    <div class="definition" id="definition"></div>
+    <div class="example" id="example"></div>
+  </section>
+  <div class="controls">
+    <button class="primary" id="teach">🔊 Teach me</button>
+    <button class="secondary" id="next">Next word</button>
+    <button class="secondary" id="spell">Spell it</button>
+    <button class="listen" id="mic">🎙️ Start voice mode</button>
+  </div>
+  <div class="status" id="status">Ready. Choose a button or start voice mode.</div>
+  <section class="quiz" id="quiz">
+    <b>Quick meaning check</b>
+    <p id="quizPrompt">Type a short meaning for the word above, then check it.</p>
+    <input id="answer" autocomplete="off" placeholder="Your meaning…" />
+    <div class="quiz-row">
+      <button class="primary" id="check">Check answer</button>
+      <button class="secondary" id="quizVoice">Ask quiz aloud</button>
+    </div>
+    <div class="score" id="score">Score: 0 / 0</div>
+  </section>
+  <p class="hint">Voice recognition uses the browser Web Speech API and works best in Chrome. No audio is stored by this prototype. If microphone access is unavailable, every action has a button fallback.</p>
+</main>
+<script>
+const words=[
+ {word:'resilient',phonetic:'/rɪˈzɪliənt/',definition:'able to recover quickly from difficulty or change',example:'A resilient team adapts when the original plan fails.',keys:['recover','quickly','difficulty','adapt','change']},
+ {word:'pragmatic',phonetic:'/præɡˈmætɪk/',definition:'focused on practical results rather than theory',example:'She took a pragmatic approach and tested the simplest solution first.',keys:['practical','results','realistic','useful']},
+ {word:'ambiguous',phonetic:'/æmˈbɪɡjuəs/',definition:'open to more than one interpretation; not completely clear',example:'The ambiguous requirement caused two teams to build different things.',keys:['unclear','interpretation','multiple','not clear']},
+ {word:'concise',phonetic:'/kənˈsaɪs/',definition:'brief but complete and easy to understand',example:'His concise update explained the problem in three sentences.',keys:['brief','short','complete','clear']},
+ {word:'meticulous',phonetic:'/məˈtɪkjələs/',definition:'very careful and precise about small details',example:'The analyst was meticulous when checking the experiment data.',keys:['careful','precise','detail','details']},
+ {word:'novel',phonetic:'/ˈnɒvəl/',definition:'new, original, or unusual',example:'The team proposed a novel way to reduce onboarding friction.',keys:['new','original','unusual']},
+ {word:'coherent',phonetic:'/koʊˈhɪrənt/',definition:'logical, consistent, and easy to follow',example:'The research became a coherent product story after synthesis.',keys:['logical','consistent','clear','follow']},
+ {word:'iterate',phonetic:'/ˈɪtəreɪt/',definition:'to improve something through repeated versions or cycles',example:'We iterate after every user test instead of waiting for a perfect launch.',keys:['repeat','improve','version','cycle']}
+];
+let index=0,correct=0,total=0,recognition=null,listening=false;
+const $=id=>document.getElementById(id);
+function render(){const w=words[index];$('word').textContent=w.word;$('phonetic').textContent=w.phonetic;$('definition').textContent=w.definition;$('example').textContent='Example: '+w.example;$('answer').value='';$('status').textContent='Word ready: '+w.word+'.';}
+function speak(text){speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.rate=.92;u.pitch=1;u.lang='en-US';speechSynthesis.speak(u);}
+function teach(){const w=words[index];const text=`Today's word is ${w.word}. ${w.word} means ${w.definition}. Example: ${w.example}`;speak(text);$('status').textContent='Teaching '+w.word+' aloud.';}
+function next(){index=(index+1)%words.length;render();speak('Next word: '+words[index].word);}
+function spell(){const w=words[index].word;speak(`${w}. Spelled ${w.split('').join(', ')}.`);$('status').textContent='Spelling '+w+'.';}
+function checkAnswer(){const raw=$('answer').value.trim().toLowerCase();if(!raw){$('status').textContent='Add a short meaning first.';return;}total++;const hit=words[index].keys.some(k=>raw.includes(k));if(hit){correct++;$('status').textContent='Nice — that captures the core meaning.';speak('Correct. Nice job.');}else{$('status').textContent='Close. A strong answer would mention: '+words[index].definition+'.';speak('Not quite. '+words[index].word+' means '+words[index].definition);}$('score').textContent=`Score: ${correct} / ${total}`;}
+function askQuiz(){speak(`Quick quiz. In your own words, what does ${words[index].word} mean?`);$('status').textContent='Quiz asked aloud. Type your answer below or say “repeat”.';}
+function handleCommand(text){const t=text.toLowerCase();$('status').textContent='Heard: “'+text+'”';if(t.includes('next')) return next();if(t.includes('spell')) return spell();if(t.includes('quiz')) return askQuiz();if(t.includes('repeat')||t.includes('teach')||t.includes('explain')) return teach();speak('Try saying teach, quiz me, next word, repeat, or spell it.');}
+function setupRecognition(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){$('mic').disabled=true;$('mic').textContent='Voice recognition unavailable';return;}recognition=new SR();recognition.lang='en-US';recognition.continuous=true;recognition.interimResults=false;recognition.onresult=e=>{const result=e.results[e.results.length-1][0].transcript.trim();handleCommand(result);};recognition.onend=()=>{if(listening){try{recognition.start();}catch(_){}}};recognition.onerror=e=>{$('status').textContent='Voice mode issue: '+e.error+'. You can keep using the buttons.';};}
+$('teach').onclick=teach;$('next').onclick=next;$('spell').onclick=spell;$('check').onclick=checkAnswer;$('quizVoice').onclick=askQuiz;
+$('mic').onclick=()=>{if(!recognition)return;if(!listening){listening=true;try{recognition.start();}catch(_){}$('mic').textContent='⏹ Stop voice mode';$('mic').className='danger';$('status').textContent='Listening… say teach, quiz me, next word, repeat, or spell it.';}else{listening=false;recognition.stop();$('mic').textContent='🎙️ Start voice mode';$('mic').className='listen';$('status').textContent='Voice mode stopped.';}};
+$('answer').addEventListener('keydown',e=>{if(e.key==='Enter')checkAnswer();});
+setupRecognition();render();
+</script>
+</body>
+</html>
